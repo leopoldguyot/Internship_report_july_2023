@@ -1,0 +1,228 @@
+---
+title: "Analysis of distances"
+author: "Léopold Guyot"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+#Packages
+
+```{r, message=FALSE}
+library(scp)
+library(scpdata)
+library(pcaMethods)
+library(tidyverse)
+library(ggplot2)
+library(patchwork)
+```
+
+# Data
+
+```{r}
+leduc <- leduc2022()
+prots <- getWithColData(leduc,
+                        "proteins_norm2")
+
+```
+
+# Finding the best subset
+
+```{r}
+
+prots_df <- as.data.frame(assay(prots))
+
+prots_tib <- as_tibble(prots_df)
+sub_no_na_2 <- prots_tib %>% 
+  select(where(~sum(is.na(.x))/length(.x) < 0.59))
+
+sub_no_na_2 <- sub_no_na_2[complete.cases(sub_no_na_2),]
+
+
+sub_no_na_3 <- prots_tib %>% 
+  select(where(~sum(is.na(.x))/length(.x) < 0.6))
+
+sub_no_na_3 <- sub_no_na_3[complete.cases(sub_no_na_3),]
+
+
+```
+# NA_generation
+```{r}
+set.seed(1)
+source("na_generation.R")
+matrix_3 <- as.matrix(sub_no_na_3)
+list_3 <- lapply(seq(0, 0.9, by = 0.05), na_generation, x = matrix_3)
+```
+
+# ppca
+
+```{r}
+ppca_wraper <- function(matrix){
+  pca <- pca(t(matrix), nPcs = 15, method = "ppca", scale = "uv", center = TRUE)
+  return(pca)
+  }
+ppca_3 <- lapply(list_3, ppca_wraper)
+```
+
+# Distances
+
+```{r}
+dist_3_ppca <- dist(scores(ppca_3[[1]]))
+dim(as.matrix(dist_3_ppca)) 
+dist_list_3_ppca <- lapply(ppca_3, function(x)dist(scores(x)))
+dist_list_norm_3_ppca <- lapply(ppca_3, function(x)dist(scores(x)%*%diag(1/x@sDev)))
+
+cor_list_3_ppca <- lapply(ppca_3, function(x)cor(t(scores(x))))
+
+dist_proccessed_3_ppca <- lapply(dist_list_3_ppca, as.vector)
+dist_norm_proccessed_3_ppca <- lapply(dist_list_norm_3_ppca, as.vector)
+
+cor_proccessed_3_ppca <- lapply(cor_list_3_ppca, function(x) x[lower.tri(x)])
+
+
+```
+# PCA plots
+
+```{r}
+ppca_na_plots <- list()
+
+
+
+for (ppca in ppca_3) {
+    ppca_df <- as.data.frame(scores(ppca))
+    ppca_df$st <- colData(leduc)[rownames(ppca_df), "SampleType"]
+    ppca_na_plots[[length(ppca_na_plots)+1]] <- ggplot(data.frame(ppca_df), aes(x = PC1, PC2, color = st))+
+    geom_point(size = 0.5)+labs(title = as.character((sum(ppca@missing)/length(ppca@missing))))+theme(legend.position = "none", plot.title = element_text(size=9))
+}
+
+patchwork::wrap_plots(ppca_na_plots)
+?patchwork::wrap_plots
+```
+
+# PCA plots for presentation
+
+```{r}
+scores_ppca_0_na <- as.data.frame(scores(ppca_3[[1]]))
+scores_ppca_0_na$st <- colData(leduc)[rownames(scores_ppca_0_na), "SampleType"]
+
+scores_ppca_30_na <- as.data.frame(scores(ppca_3[[7]]))
+scores_ppca_30_na$st <- colData(leduc)[rownames(scores_ppca_30_na), "SampleType"]
+
+scores_ppca_60_na <- as.data.frame(scores(ppca_3[[13]]))
+scores_ppca_60_na$st <- colData(leduc)[rownames(scores_ppca_60_na), "SampleType"]
+
+scores_ppca_90_na <- as.data.frame(scores(ppca_3[[19]]))
+scores_ppca_90_na$st <- colData(leduc)[rownames(scores_ppca_90_na), "SampleType"]
+
+
+first_ppca <- ggplot(scores_ppca_0_na, aes(x = PC1, PC2, color = st))+
+    geom_point()+labs(color = "Sample type", title = "PCA plot for the 0% NA subset")+theme(plot.title = element_text(size=8))+
+    xlab(paste("PC1 (", round(ppca_3[[1]]@R2[1], 3), ")", sep = ""))+
+    ylab(paste("PC2 (", round(ppca_3[[1]]@R2[2], 3), ")", sep = ""))
+second_ppca <- ggplot(scores_ppca_30_na, aes(x = -PC1, -PC2, color = st))+
+    geom_point()+labs(color = "Sample type", title = "PCA plot for the 30% NA subset")+theme(plot.title = element_text(size=8))+
+    xlab(paste("PC1 (", round(ppca_3[[7]]@R2[1], 3), ")", sep = ""))+
+    ylab(paste("PC2 (", round(ppca_3[[7]]@R2[2], 3), ")", sep = ""))
+
+third_ppca <- ggplot(scores_ppca_60_na, aes(x = PC1, PC2, color = st))+
+    geom_point()+labs(color = "Sample type", title = "PCA plot for the 60% NA subset")+theme(plot.title = element_text(size=8))+
+    xlab(paste("PC1 (", round(ppca_3[[13]]@R2[1], 3), ")", sep = ""))+
+    ylab(paste("PC2 (", round(ppca_3[[13]]@R2[2], 3), ")", sep = ""))
+
+fourth_ppca <- ggplot(scores_ppca_90_na, aes(x = -PC1, PC2, color = st))+
+    geom_point()+labs(color = "Sample type", title = "PCA plot for the 90% NA subset")+theme(plot.title = element_text(size=8))+
+    xlab(paste("PC1 (", round(ppca_3[[19]]@R2[1], 3), ")", sep = ""))+
+    ylab(paste("PC2 (", round(ppca_3[[19]]@R2[2], 3), ")", sep = ""))
+
+(first_ppca/second_ppca/third_ppca/fourth_ppca)+plot_layout(guides = "collect")
+ggsave("figures/pca_plots_presentation_ppca.pdf", width = 4, height = 10)
+```
+
+# Graphs
+
+```{r}
+l_dist_ppca <- length(dist_proccessed_3_ppca[[1]])
+df3_ppca <- data.frame("rate_na" = sort(rep(seq(0, 0.9, by = 0.05), l_dist_ppca)),
+             "dist" = unlist(dist_proccessed_3_ppca), "cor" = unlist(cor_proccessed_3_ppca), "norm_dist" = unlist(dist_norm_proccessed_3_ppca))
+df3_ppca$factor_na <- as.factor(df3_ppca$rate_na)  
+
+  ggplot(df3_ppca, aes(x = factor_na, y = dist, color = factor_na))+geom_violin()
+  ggplot(df3_ppca, aes(x = factor_na, y = norm_dist, color = factor_na))+geom_violin()
+
+  ggplot(df3_ppca, aes(x = factor_na, y = cor, color = factor_na))+geom_boxplot()
+
+```
+
+# Difference with the reference (0%)
+
+```{r}
+compare <- function(dist, ref){
+  return(mapply(sum, dist, -c(ref)))
+}
+x <- compare(dist = dist_proccessed_3_ppca[[5]],ref = dist_proccessed_3_ppca[[1]] )
+
+delta_dist_ppca <- lapply(dist_proccessed_3_ppca[2:19], compare, ref = dist_proccessed_3_ppca[[1]])
+
+delta_cor_ppca <- lapply(cor_proccessed_3_ppca[2:19], compare, ref = cor_proccessed_3_ppca[[1]])
+
+
+delta_dist_ppca_norm <- lapply(dist_norm_proccessed_3_ppca[2:19], compare, ref = dist_norm_proccessed_3_ppca[[1]])
+
+l_delta_ppca <- length(delta_dist_ppca[[1]])
+
+df3_ppca_delta <- data.frame("rate_na" = sort(rep(seq(0.05, 0.9, by = 0.05), l_delta_ppca)),
+             "delta_dist_ppca" = unlist(delta_dist_ppca), "delta_dist_ppca_norm" = unlist(delta_dist_ppca_norm), "delta_cor" = unlist(delta_cor_ppca))
+df3_ppca_delta$factor_na <- as.factor(df3_ppca_delta$rate_na)  
+
+ggplot(df3_ppca_delta, aes(x = factor_na, y = delta_dist_ppca_norm, color = factor_na))+geom_violin()
+
+```
+# dist and cor plots for presentations
+
+```{r}
+  dist_plot <- ggplot(df3_ppca, aes(x = factor_na, y = dist))+geom_violin()+theme(legend.position = "none",axis.text.x=element_blank(),
+        axis.ticks.x=element_blank(), axis.title.x = element_blank())+ylab("Distance")
+  norm_dist_plot <- ggplot(df3_ppca, aes(x = factor_na, y = norm_dist))+geom_violin()+theme(legend.position = "none",axis.text.x=element_blank(),
+        axis.ticks.x=element_blank(), axis.title.x = element_blank())+ylab("Normalized distance")
+  cor_plot <- ggplot(df3_ppca, aes(x = factor_na, y = cor))+geom_violin()+theme(legend.position = "none")+ylab("Correlation")+xlab("NA rates")
+  
+  delta_dist <- ggplot(df3_ppca_delta, aes(x = factor_na, y = delta_dist_ppca_norm))+geom_violin()+theme(legend.position = "none",axis.text.x=element_blank(),
+        axis.ticks.x=element_blank(), axis.title.x = element_blank())+ylab("Delta normalized distance")
+  delta_cor <- ggplot(df3_ppca_delta, aes(x = factor_na, y = delta_cor))+geom_violin()+theme(legend.position = "none")+ylab("Delta correlation")+xlab("NA rates")
+  
+  dist_plot/norm_dist_plot/cor_plot/delta_dist/delta_cor
+  ggsave("figures/dist_cor_plot_ppca.pdf", width = 8, height = 10)
+  
+```
+#acc_ppca, totss_ppca/betss_ppca, and mse_ppca
+
+```{r}
+mse_ppca_compute <- function(matrix, reference){
+      result <- mean((scores(reference)[,1] - scores(matrix)[,1])^2+(scores(reference)[,2] - scores(matrix)[,2])^2)
+    return(result)
+}
+
+acc_ppcauracy <- function(kmn){
+    conf_table <- table(colData(leduc)[names(kmn$cluster), "SampleType"], kmn$cluster)
+    acc_ppcas <- c((conf_table[1,1]+conf_table[2,2])/sum(conf_table), (conf_table[1,2]+conf_table[2,1])/sum(conf_table))
+    return(max(acc_ppcas))
+  }
+
+kmn_list_ppca <- lapply(ppca_3, function(x) kmeans(scores(x), centers = 2,iter.max = 100))
+totss_ppca <- lapply(kmn_list_ppca, function(x) x$tot.withinss)
+
+betss_ppca <-  lapply(kmn_list_ppca, function(x) x$betweenss)
+
+mse_ppca <- lapply(ppca_3[2:19], mse_ppca_compute, ref = ppca_3[[1]])
+acc_ppca <- lapply(kmn_list_ppca[1:19], acc_ppcauracy)
+df_kmn_ppca <- data.frame("rate_na" = seq(0, 0.9, by = 0.05),
+             "totss_ppca" = unlist(totss_ppca), "betss_ppca" = unlist(betss_ppca), "bet_tot" = unlist(betss_ppca)/unlist(totss_ppca), "acc_ppca" = unlist(acc_ppca), "mse_ppca" = c(NA, unlist(mse_ppca)))
+
+ggplot(df_kmn_ppca, aes(x = rate_na, y = bet_tot))+ geom_point()
+ggplot(df_kmn_ppca, aes(x = rate_na, y = acc_ppca))+ geom_point()
+ggplot(df_kmn_ppca, aes(x = rate_na, y = mse_ppca))+ geom_point()
+
+```
+

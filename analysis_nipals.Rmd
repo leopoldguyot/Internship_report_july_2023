@@ -1,0 +1,236 @@
+---
+title: "Analysis of distances"
+author: "Léopold Guyot"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+#Packages
+
+```{r, message=FALSE}
+library(scp)
+library(scpdata)
+library(pcaMethods)
+library(tidyverse)
+library(ggplot2)
+library(patchwork)
+library(nipals)
+```
+
+# Data
+
+```{r}
+leduc <- leduc2022()
+prots <- getWithColData(leduc,
+                        "proteins_norm2")
+
+```
+
+# Finding the best subset
+
+```{r}
+
+prots_df <- as.data.frame(assay(prots))
+
+prots_tib <- as_tibble(prots_df)
+sub_no_na_2 <- prots_tib %>% 
+  select(where(~sum(is.na(.x))/length(.x) < 0.59))
+
+sub_no_na_2 <- sub_no_na_2[complete.cases(sub_no_na_2),]
+
+
+sub_no_na_3 <- prots_tib %>% 
+  select(where(~sum(is.na(.x))/length(.x) < 0.6))
+
+sub_no_na_3 <- sub_no_na_3[complete.cases(sub_no_na_3),]
+```
+# NA_generation
+```{r}
+set.seed(1)
+source("na_generation.R")
+matrix_3 <- as.matrix(sub_no_na_3)
+list_3 <- lapply(seq(0, 0.9, by = 0.05), na_generation, x = matrix_3)
+```
+
+# Nipals
+
+```{r}
+nipals_wraper <- function(matrix){
+  pca <- pca(t(matrix), nPcs = 15, method = "nipals", scale = "uv", center = TRUE)
+  return(pca)
+  }
+nipals_3 <- lapply(list_3, nipals_wraper)
+```
+
+# Distances
+
+```{r}
+dist_3 <- dist(scores(nipals_3[[1]]))
+dim(as.matrix(dist_3)) 
+dist_list_3 <- lapply(nipals_3, function(x)dist(scores(x)))
+dist_list_norm_3 <- lapply(nipals_3, function(x)dist(scores(x)%*%diag(1/x@sDev)))
+
+cor_list_3 <- lapply(nipals_3, function(x)cor(t(scores(x))))
+
+dist_proccessed_3 <- lapply(dist_list_3, as.vector)
+dist_norm_proccessed_3 <- lapply(dist_list_norm_3, as.vector)
+
+cor_proccessed_3 <- lapply(cor_list_3, function(x) x[lower.tri(x)])
+
+
+```
+# PCA plots
+
+```{r}
+nipals_na_plots <- list()
+
+
+
+for (nipals in nipals_3) {
+    nipals_df <- as.data.frame(scores(nipals))
+    nipals_df$st <- colData(leduc)[rownames(nipals_df), "Set"]
+    nipals_na_plots[[length(nipals_na_plots)+1]] <- ggplot(data.frame(nipals_df), aes(x = PC1, PC2, color = st))+
+    geom_point(size = 0.5)+labs(title = as.character(round((sum(nipals@missing)/length(nipals@missing)),2)))+theme(legend.position = "none",plot.title = element_text(size=9))
+}
+
+patchwork::wrap_plots(nipals_na_plots)
+
+
+```
+
+# PCA plots for presentation
+
+```{r}
+scores_0_na <- as.data.frame(scores(nipals_3[[1]]))
+scores_0_na$st <- colData(leduc)[rownames(scores_0_na), "SampleType"]
+
+scores_30_na <- as.data.frame(scores(nipals_3[[7]]))
+scores_30_na$st <- colData(leduc)[rownames(scores_30_na), "SampleType"]
+
+scores_60_na <- as.data.frame(scores(nipals_3[[13]]))
+scores_60_na$st <- colData(leduc)[rownames(scores_60_na), "SampleType"]
+
+scores_90_na <- as.data.frame(scores(nipals_3[[19]]))
+scores_90_na$st <- colData(leduc)[rownames(scores_90_na), "SampleType"]
+
+
+first <- ggplot(scores_0_na, aes(x = PC1, PC2, color = st))+
+    geom_point()+xlim(-15,15)+labs(color = "Sample type", title = "PCA plot for the 0% NA subset")+theme(plot.title = element_text(size=8))+
+    xlab(paste("PC1 (", round(nipals_3[[1]]@R2[1], 3), ")", sep = ""))+
+    ylab(paste("PC2 (", round(nipals_3[[1]]@R2[2], 3), ")", sep = ""))
+second <- ggplot(scores_30_na, aes(x = PC1, PC2, color = st))+
+    geom_point()+xlim(-15,15)+labs(color = "Sample type", title = "PCA plot for the 30% NA subset")+theme(plot.title = element_text(size=8))+
+    xlab(paste("PC1 (", round(nipals_3[[7]]@R2[1], 3), ")", sep = ""))+
+    ylab(paste("PC2 (", round(nipals_3[[7]]@R2[2], 3), ")", sep = ""))
+
+third <- ggplot(scores_60_na, aes(x = PC1, PC2, color = st))+
+    geom_point()+xlim(-10,10)+labs(color = "Sample type", title = "PCA plot for the 60% NA subset")+theme(plot.title = element_text(size=8))+
+    xlab(paste("PC1 (", round(nipals_3[[13]]@R2[1], 3), ")", sep = ""))+
+    ylab(paste("PC2 (", round(nipals_3[[13]]@R2[2], 3), ")", sep = ""))
+
+fourth <- ggplot(scores_90_na, aes(x = PC1, -PC2, color = st))+
+    geom_point()+xlim(-2.5, 2.5)+labs(color = "Sample type", title = "PCA plot for the 90% NA subset")+theme(plot.title = element_text(size=8))+
+    xlab(paste("PC1 (", round(nipals_3[[19]]@R2[1], 3), ")", sep = ""))+
+    ylab(paste("PC2 (", round(nipals_3[[19]]@R2[2], 3), ")", sep = ""))
+
+(first/second/third/fourth)+ plot_layout(guides = "collect")
+ggsave("figures/pca_plots_presentation.pdf", width = 4, height = 10)
+```
+
+
+# Graphs
+
+```{r}
+l_dist <- length(dist_proccessed_3[[1]])
+l_cor <- length(cor_proccessed_3[[1]])
+df3 <- data.frame("rate_na" = sort(rep(seq(0, 0.9, by = 0.05), l_dist)),
+             "dist" = unlist(dist_proccessed_3), "cor" = unlist(cor_proccessed_3), "norm_dist" = unlist(dist_norm_proccessed_3))
+df3$factor_na <- as.factor(df3$rate_na)  
+
+  dist_plot <- ggplot(df3, aes(x = factor_na, y = dist))+geom_boxplot()
+  norm_dist_plot <- ggplot(df3, aes(x = factor_na, y = norm_dist))+geom_boxplot()
+
+  cor_plot <- ggplot(df3, aes(x = factor_na, y = cor))+geom_boxplot()
+
+  dist_plot/norm_dist_plot/cor_plot
+```
+
+# Difference with the reference (0%)
+
+```{r}
+compare <- function(dist, ref){
+  return(mapply(sum, dist, -c(ref)))
+}
+x <- compare(dist = dist_proccessed_3[[5]],ref = dist_proccessed_3[[1]] )
+
+delta_dist <- lapply(dist_proccessed_3[2:19], compare, ref = dist_proccessed_3[[1]])
+
+delta_cor <- lapply(cor_proccessed_3[2:19], compare, ref = cor_proccessed_3[[1]])
+
+delta_dist_norm <- lapply(dist_norm_proccessed_3[2:19], compare, ref = dist_norm_proccessed_3[[1]])
+
+max(abs(cor_proccessed_3[[19]]-cor_proccessed_3[[1]]))
+max(delta_cor[[18]])
+l_delta <- length(delta_dist[[1]])
+
+df3_delta <- data.frame("rate_na" = sort(rep(seq(0.05, 0.9, by = 0.05), l_delta)),
+             "delta_dist" = unlist(delta_dist), "delta_dist_norm" = unlist(delta_dist_norm), "delta_cor" = unlist(delta_cor))
+df3_delta$factor_na <- as.factor(df3_delta$rate_na)  
+ggplot(df3_delta, aes(x = factor_na, y = delta_dist_norm, color = factor_na))+geom_boxplot()
+ggplot(df3_delta, aes(x = factor_na, y = delta_cor, color = factor_na))+geom_violin()
+
+
+```
+
+# dist and cor plots for presentations
+
+```{r}
+  dist_plot <- ggplot(df3, aes(x = factor_na, y = dist))+geom_violin()+theme(legend.position = "none",axis.text.x=element_blank(),
+        axis.ticks.x=element_blank(), axis.title.x = element_blank())+ylab("Distance")
+  norm_dist_plot <- ggplot(df3, aes(x = factor_na, y = norm_dist))+geom_violin()+theme(legend.position = "none",axis.text.x=element_blank(),
+        axis.ticks.x=element_blank(), axis.title.x = element_blank())+ylab("Normalized distance")
+  cor_plot <- ggplot(df3, aes(x = factor_na, y = cor))+geom_violin()+theme(legend.position = "none")+ylab("Correlation")+xlab("NA rates")
+  
+  delta_dist <- ggplot(df3_delta, aes(x = factor_na, y = delta_dist_norm))+geom_violin()+theme(legend.position = "none",axis.text.x=element_blank(),
+        axis.ticks.x=element_blank(), axis.title.x = element_blank())+ylab("Delta normalized distance")
+  delta_cor <- ggplot(df3_delta, aes(x = factor_na, y = delta_cor))+geom_violin()+theme(legend.position = "none")+ylab("Delta correlation")+xlab("NA rates")
+  
+  dist_plot/norm_dist_plot/cor_plot/delta_dist/delta_cor
+  ggsave("figures/dist_cor_plot.pdf", width = 8, height = 10)
+  
+```
+
+
+#acc, totss/betss, and mse
+
+```{r}
+mse_compute <- function(matrix, reference){
+      result <- mean((scores(reference)[,1] - scores(matrix)[,1])^2+(scores(reference)[,2] - scores(matrix)[,2])^2)
+    return(result)
+}
+
+accuracy <- function(kmn){
+    conf_table <- table(colData(leduc)[names(kmn$cluster), "SampleType"], kmn$cluster)
+    accs <- c((conf_table[1,1]+conf_table[2,2])/sum(conf_table), (conf_table[1,2]+conf_table[2,1])/sum(conf_table))
+    return(max(accs))
+  }
+
+kmn_list <- lapply(nipals_3, function(x) kmeans(scores(x), centers = 2,iter.max = 100))
+totss <- lapply(kmn_list, function(x) x$tot.withinss)
+
+betss <-  lapply(kmn_list, function(x) x$betweenss)
+
+mse <- lapply(nipals_3[2:19], mse_compute, ref = nipals_3[[1]])
+acc <- lapply(kmn_list[1:19], accuracy)
+df_kmn <- data.frame("rate_na" = seq(0, 0.9, by = 0.05),
+             "totss" = unlist(totss), "betss" = unlist(betss), "bet_tot" = unlist(betss)/unlist(totss), "acc" = unlist(acc), "mse" = c(NA, unlist(mse)))
+
+ggplot(df_kmn, aes(x = rate_na, y = bet_tot))+ geom_point()
+ggplot(df_kmn, aes(x = rate_na, y = acc))+ geom_point()
+ggplot(df_kmn, aes(x = rate_na, y = mse))+ geom_point()
+
+```
+

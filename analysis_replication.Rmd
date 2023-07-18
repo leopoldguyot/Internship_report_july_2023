@@ -1,0 +1,184 @@
+---
+title: "Analysis replication v3"
+author: "Léopold Guyot"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Packages
+
+```{r}
+library(gbutils)
+library(scpdata)
+library(scp)
+library(tidyverse)
+library(ggthemes)
+```
+
+# Functions
+
+```{r}
+  mse_compute <- function(matrix, reference){
+    result <- mean((scores(reference)[,1] - scores(matrix)[,1])^2+(scores(reference)[,2] - scores(matrix)[,2])^2)
+    return(result)
+  }
+  
+  retrieve_totss <- function(kmn_obj){
+    if(isNA(kmn_obj)|is.null(kmn_obj$tot.withinss)){
+      return(NA)
+    }
+    return(kmn_obj$tot.withinss)
+  }
+  
+  retrieve_betss <- function(kmn_obj){
+    if(isNA(kmn_obj) | is.null(kmn_obj$tot.withinss)){
+      return(NA)
+    }
+    return(kmn_obj$betweenss)
+  }
+  
+  accuracy <- function(kmn, set){
+    conf_table <- table(colData(leduc)[unlist(attributes(kmn$cluster)), "SampleType"], kmn$cluster)
+    accs <- c((conf_table[1,1]+conf_table[2,2])/sum(conf_table), (conf_table[1,2]+conf_table[2,1])/sum(conf_table))
+    return(max(accs))
+  }
+  
+retrieve_acc <- function(kmn_obj,ref){
+    if(isNA(kmn_obj) | is.null(kmn_obj) ){
+      return(NA)
+    }
+    acc <- accuracy(kmn_obj, ref)
+    return(acc)
+      }
+
+  
+```
+
+
+# Loading of data
+
+```{r}
+
+kmn_na <- readRDS(file = "data_output/na_kmn_v3.rds")
+kmn_na_random <- readRDS(file ="data_output/na_kmn_random_v3.rds")
+kmn_svd <- readRDS(file = "data_output/svd_kmn_v3.rds")
+svd_comp_knn <- readRDS(file = "data_output/svd_comp_kmn_v3.rds")
+complete_kmn <- readRDS(file = "data_output/comp_pca_kmn_v3.rds")
+leduc <- leduc2022()
+```
+
+
+# betss, totss and acc
+
+```{r}
+kmn_to_df <- function(kmn_list, set){
+  
+  kmn_totss <- lapply(kmn_list, function(x){
+  lapply(x, function(y){
+    lapply(y, retrieve_totss)
+    })
+  })
+  kmn_totss
+
+  kmn_betss <- lapply(kmn_list, function(x){
+  lapply(x, function(y){
+    lapply(y, retrieve_betss)
+    })
+  })
+  
+
+  kmn_acc <- lapply(kmn_list, function(x){ #fix
+  lapply(x, function(y){
+    lapply(y, retrieve_acc,  leduc)
+    })
+  })
+  rates = c(0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 0.95)
+
+  df <- data.frame("method" =rep(c("nipals", "ppca"), 88),"na_rate"=rep(sort(rep(rates, 2)), 8), "totss"=unlist(kmn_totss),"betss"=unlist(kmn_betss), "acc" = unlist(kmn_acc))
+  return(df)
+}
+```
+
+# In a dataframe
+
+```{r}
+df_complete <- kmn_to_df(complete_kmn, leduc)
+df_kmn_no_random <- kmn_to_df(kmn_na, leduc)
+df_kmn_random <- kmn_to_df(kmn_na_random, leduc)
+mean_svd <- mean(unlist(lapply(kmn_svd, retrieve_acc, leduc)))
+mean_svd
+```
+
+# Non random generation
+
+```{r}
+df_no_random <- df_kmn_no_random %>% 
+    mutate("factor_na" = as.factor(na_rate)) %>% 
+    mutate("bet_tot" = betss/totss) %>% 
+    mutate("acc_per" = acc*100)
+df_no_random_mean <- df_no_random %>% 
+    group_by(na_rate, method) %>% 
+    summarize("mean_totss" = mean(totss), "mean_betss" = mean(betss), "mean_bet_tot" = mean(bet_tot), "mean_acc" = mean(acc), "median_acc" = median(acc))
+
+ggplot(df_no_random, aes(x = factor_na, y = bet_tot, color = method))+geom_boxplot()+facet_wrap(vars(method))
+
+ggplot(df_no_random, aes(x = factor_na, y = acc_per, color = method))+geom_boxplot()+facet_grid(rows = vars(method))+
+  geom_hline(aes(yintercept = mean_svd*100), linewidth = 0.4, color="darkgreen", linetype="dashed")+
+  ylab("Accuracy (%)")+xlab("missing value rates")+theme(legend.key.height = unit(1, "cm"),
+    legend.key.width = unit(1,"cm"),
+    legend.text = element_text(size=10),
+    legend.title = element_text(size = 10))
+
+
+ggsave(filename = "figures/replication_3_no_random_acc.pdf", width = 9, height = 8)
+```
+
+# Random generation
+
+```{r}
+df_random <- df_kmn_random %>% 
+    mutate("factor_na" = as.factor(na_rate)) %>% 
+    mutate("bet_tot" = betss/totss)
+kmn_results_mean <- df_random %>% 
+    group_by(na_rate, method) %>% 
+    summarize("mean_totss" = mean(totss), "mean_betss" = mean(betss), "mean_bet_tot" = mean(bet_tot), "mean_acc" = mean(acc), "median_acc" = median(acc))
+
+ggplot(df_random, aes(x = factor_na, y = bet_tot, color = method))+geom_boxplot()+facet_wrap(vars(method))
+
+ggplot(df_random, aes(x = factor_na, y = acc, color = method))+geom_boxplot()+facet_grid(rows = vars(method))+ylab("Accuracy")+xlab("NA rates")+
+  theme(legend.key.height = unit(1, "cm"),
+    legend.key.width = unit(1,"cm"),
+    legend.text = element_text(size=13),
+    legend.title = element_text(size = 13))
+
+?theme
+ggsave(filename = "figures/replication_3_random_acc.pdf")
+```
+
+# Complete subset
+
+```{r}
+
+df_comp <- df_complete %>% 
+    mutate("factor_na" = as.factor(na_rate)) %>% 
+    mutate("bet_tot" = betss/totss)
+kmn_results_mean <- df_comp %>% 
+    group_by(na_rate, method) %>% 
+    summarize("mean_totss" = mean(totss), "mean_betss" = mean(betss), "mean_bet_tot" = mean(bet_tot), "mean_acc" = mean(acc), "median_acc" = median(acc))
+
+ggplot(df_comp, aes(x = factor_na, y = bet_tot, color = method))+geom_boxplot()+facet_wrap(vars(method))
+
+ggplot(df_comp, aes(x = factor_na, y = acc, color = method))+geom_boxplot()+facet_grid(rows = vars(method))+ylab("Accuracy")+xlab("NA rates")+theme(legend.key.height = unit(1, "cm"),
+    legend.key.width = unit(1,"cm"),
+    legend.text = element_text(size=13),
+    legend.title = element_text(size = 13))
+
+ggsave(filename = "figures/replication_3_comp_acc.png", width = 12, height = 9.5 )
+
+```
+
+
