@@ -1,21 +1,23 @@
 library(ggplot2)
 library(tidyverse)
 
-bench <- read.csv("data_output/benchmark_run_3.csv")
-bench <- read.csv("data_output/benchmark_run_pc2.csv")
+bench2 <- read.csv("data_output/benchmark_run_pc2.csv")
+bench2$nPCs <- 2
+bench10 <- read.csv("data_output/benchmark_run_pc10.csv")
+bench10$nPCs <- 10
+bench25 <- read.csv("data_output/benchmark_run_pc25.csv")
+bench25$nPCs <- 25
+
+bench <- rbind(bench2, bench10, bench25)
 
 bench_summary <- bench %>% 
   mutate("dimension" = cols*rows) %>% 
-  filter(expr != 'pcaMethods_wraper(matrix, "bpca")') %>% 
-  group_by(dimension, expr) %>% 
+  group_by(dimension, expr, nPCs) %>% 
   summarise("mean_time" = mean(time/(1e9)))
-
-bench_summary
-class(bench)
-View(bench_summary)
-bench$time
 sum(bench$time)/(1e9*60)
+
 ggplot(bench_summary, aes(y = mean_time, x = dimension, color = expr))+geom_line(size = 2)+
+  facet_wrap(~nPcs)+
   xlab("Number of values treated (dimension)")+
   ylab("Time in seconds")+
   labs(color = "Algorithm")+

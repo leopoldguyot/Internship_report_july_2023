@@ -156,6 +156,15 @@ df3$factor_na <- as.factor(df3$rate_na)
   cor_plot <- ggplot(df3, aes(x = factor_na, y = cor))+geom_boxplot()
 
   dist_plot/norm_dist_plot/cor_plot
+  
+  
+model <- lm(dist~factor_na, df3)
+model_conti <- lm(dist~rate_na, df3)
+
+
+summary(model) #used for the pvals
+summary(model_conti)
+
 ```
 
 # Difference with the reference (0%)
@@ -181,6 +190,7 @@ df3_delta <- data.frame("rate_na" = sort(rep(seq(0.05, 0.9, by = 0.05), l_delta)
 df3_delta$factor_na <- as.factor(df3_delta$rate_na)  
 ggplot(df3_delta, aes(x = factor_na, y = delta_dist_norm, color = factor_na))+geom_boxplot()
 ggplot(df3_delta, aes(x = factor_na, y = delta_cor, color = factor_na))+geom_violin()
+
 
 
 ```

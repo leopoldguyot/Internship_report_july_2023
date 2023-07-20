@@ -31,10 +31,19 @@ subset_generation_wraper <- function(dim, dataset){
   }
 
 pcaMethods_wraper <- function(matrix, method, npcs){
-  matrix <- matrix[rowSums(is.na(matrix)) != ncol(matrix), ]
-  matrix <- matrix[,colSums(is.na(matrix))<nrow(matrix)]
-  pca <- pca(t(matrix), method = method, nPcs = npcs)
-  return(pca)
+  tryCatch(
+    {
+      matrix <- matrix[rowSums(is.na(matrix)) != ncol(matrix), ]
+      matrix <- matrix[,colSums(is.na(matrix))<nrow(matrix)]
+      pca <- pca(t(matrix), method = method, nPcs = npcs)
+      return(pca)
+    },
+    error = function(e){
+      print("An error occurs while computing the pca with pcaMethods, replacing with NA")
+      return(NA)
+    }
+  )
+  
 }
 svd_imputation_wraper <- function(matrix, npcs){
   matrix <- impute_knn(matrix, k = 3, colmax = 1)
@@ -122,7 +131,7 @@ bench_pc15 <- mapply(function(matrix, imputed_matrix){
 }, generated_subset, generated_subset_imputed, SIMPLIFY = FALSE)
 
 bench_pc50 <- mapply(function(matrix, imputed_matrix){
-  benchmark_wraper(npcs = 30, matrix = matrix, imputed_matrix = imputed_matrix, times = 10)
+  benchmark_wraper(npcs = 25, matrix = matrix, imputed_matrix = imputed_matrix, times = 10)
 }, generated_subset, generated_subset_imputed, SIMPLIFY = FALSE)
 
 #bench <- lapply(generated_subset, benchmark_wraper, times = 2)

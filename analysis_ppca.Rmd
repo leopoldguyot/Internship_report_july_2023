@@ -17,6 +17,7 @@ library(pcaMethods)
 library(tidyverse)
 library(ggplot2)
 library(patchwork)
+library(car)
 ```
 
 # Data
@@ -152,7 +153,14 @@ df3_ppca$factor_na <- as.factor(df3_ppca$rate_na)
   ggplot(df3_ppca, aes(x = factor_na, y = norm_dist, color = factor_na))+geom_violin()
 
   ggplot(df3_ppca, aes(x = factor_na, y = cor, color = factor_na))+geom_boxplot()
+  
+  
+  model <- lm(dist~factor_na, df3_ppca)
+model_conti <- lm(dist~rate_na, df3_ppca)
 
+
+summary(model)
+summary(model_conti)
 ```
 
 # Difference with the reference (0%)
@@ -178,6 +186,8 @@ df3_ppca_delta$factor_na <- as.factor(df3_ppca_delta$rate_na)
 
 ggplot(df3_ppca_delta, aes(x = factor_na, y = delta_dist_ppca_norm, color = factor_na))+geom_violin()
 
+leveneTest(delta_cor~factor_na, data = df3_ppca_delta)
+bartlett.test(delta_cor~factor_na, data = df3_ppca_delta)
 ```
 # dist and cor plots for presentations
 
