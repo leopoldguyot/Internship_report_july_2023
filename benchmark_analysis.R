@@ -15,9 +15,9 @@ bench_summary <- bench %>%
   group_by(dimension, expr, nPCs) %>% 
   summarise("mean_time" = mean(time/(1e9)))
 sum(bench$time)/(1e9*60)
-
+bench_summary$nPCs <- as.factor(bench_summary$nPCs)
 ggplot(bench_summary, aes(y = mean_time, x = dimension, color = expr))+geom_line(size = 2)+
-  facet_wrap(~nPcs)+
+  facet_wrap(vars(nPCs))+
   xlab("Number of values treated (dimension)")+
   ylab("Time in seconds")+
   labs(color = "Algorithm")+
